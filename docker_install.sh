@@ -2,32 +2,68 @@
 
 ARGS="$@"
 DOCKER_DEFAULT_VERSION=28.1.1
+IS_FORCE=false
 
-
-for ARG in $ARGS 
-do  
+for ARG in $ARGS
+do
     case $ARG in
         -v=*|--version=*)
             DOCKER_VERSION="${ARG#*=}"
             echo "DOWNLOAD DOCKER VERSION: ${DOCKER_VERSION}"
             shift;;
-        *)
-            echo "DOWNLOAD DEFAULT VERSION: ${DOCKER_DEFAULT_VERSION}"
+        -i=*|--install=*)
+            INSTALL_SERVICE="${ARG#*=}"
+            shift;;
+        -f=*|--force=*)
+            IS_FORCE="${ARG#*=}"
+            shift;;
     esac
 done
 
-DOCKER_REPO=https://download.docker.com/linux/static/stable/x86_64/
+DOCKER_REPO=https://download.docker.com/linux/static/stable/x86_64
+
+check_service() {
+    if [[ $(systemctl is-active $1) == active ]]
+    then
+        return 1
+    else
+        return 0
+    fi
+}
+
+restart_service() {
+    SERVICE_STATE=$(check_service $1)
+
+    if [[ $SERVICE_STATE -eq 1 ]]
+    then
+        sudo systemctl restart $1
+    fi
+
+}
+
 
 install_docker() {
+
+    if [[ -d /etc/docker ]]
+    then
+        sudo rm -rf /etc/docker
+    fi
+
+    if [[ ! -n $DOCKER_VERSION ]]
+    then
+        echo "DOWNLOAD DEFAULT VERSION: ${DOCKER_DEFAULT_VERSION}"
+        DOCKER_VERSION=$DOCKER_DEFAULT_VERSION
+    fi
+
     URL=$DOCKER_REPO/docker-$DOCKER_VERSION.tgz
 
     wget $URL -O docker-$DOCKER_VERSION.tgz
 
-    tar xzvf docker-$DOCKER_VERSION.tgz docker-bin
+    sudo tar xzvf docker-$DOCKER_VERSION.tgz
 
-    sudo chown -R root:root "docker-bin"
+    sudo chown -R root:root "docker"
 
-    sudo mv docker-bin/* /usr/bin/
+    sudo mv docker/* /usr/bin/
 
     sudo mkdir /etc/docker && sudo touch /etc/docker/daemon.json
 }
@@ -40,8 +76,8 @@ create_group() {
 }
 
 create_services() {
-    
-    sudo cat << EOF > /lib/systemd/system/containerd.service
+
+    sudo bash -c 'cat << EOF > /lib/systemd/system/containerd.service
 
 # Copyright The containerd Authors.
 #
@@ -86,9 +122,9 @@ OOMScoreAdjust=-999
 [Install]
 WantedBy=multi-user.target
 
-EOF
+EOF'
 
-    sudo cat << EOF > /lib/systemd/system/docker.socket
+    sudo bash -c 'cat << EOF > /lib/systemd/system/docker.socket
 [Unit]
 Description=Docker Socket for the API
 
@@ -103,9 +139,9 @@ SocketGroup=docker
 [Install]
 WantedBy=sockets.target
 
-EOF
+EOF'
 
-    sudo cat << EOF > /lib/systemd/system/docker.service
+    sudo bash -c 'cat << EOF > /lib/systemd/system/docker.service
 [Unit]
 Description=Docker Application Container Engine
 Documentation=https://docs.docker.com
@@ -141,10 +177,17 @@ StartLimitInterval=60s
 [Install]
 WantedBy=multi-user.target
 
-EOF
+EOF'
 
+SERVICES=(containerd.service docker.socket docker.service)
 
-sudo systemctl enable --now containerd.service docker.socket docker.service
+sudo systemctl daemon-reload
+
+for $SERVICE in ${SERVICES[@]}
+do
+    restart_service $SERVICE
+done
+
 
 }
 
@@ -155,20 +198,25 @@ if [ -z "$DOCKER_GROUP" ]
 then
     echo "Docker group not found. Was been create"
     create_group
-else 
+else
     echo "Docker group already exist"
 fi
 
-DOCKER_BINARIES=$(which docker)
+DOCKER_BINARIES=$(which docker 2>/dev/null)
 
-if [ -z "$DOCKER_BINARIES" ]
+if [[ -z "$DOCKER_BINARIES"  ||  $IS_FORCE -eq true ]]
 then
     echo "docker binaries not found. Was been installed"
     install_docker
-    create_services
-else 
+else
     echo "Docker already installed"
 fi
 
-docker -v
+if [[ -n $INSTALL_SERVICE ]]
+then
+    create_services
+fi
 
+DOCKER_INFO=$(docker -v)
+
+echo "Docker has been installed: $DOCKER_INFO"
