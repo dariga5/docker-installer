@@ -208,7 +208,6 @@ if [[ -z "$DOCKER_BINARIES"  ||  $IS_FORCE -eq true ]]
 then
     echo "docker binaries not found. Was been installed"
     install_docker
-    create_services
 else
     echo "Docker already installed"
 fi
