@@ -183,7 +183,7 @@ SERVICES=(containerd.service docker.socket docker.service)
 
 sudo systemctl daemon-reload
 
-for $SERVICE in ${SERVICES[@]}
+for SERVICE in ${SERVICES[@]}
 do
     restart_service $SERVICE
 done
