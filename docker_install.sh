@@ -37,6 +37,8 @@ restart_service() {
     if [[ $SERVICE_STATE -eq 1 ]]
     then
         sudo systemctl restart $1
+    else
+        sudo systemctl enable --now $1
     fi
 
 }
@@ -72,7 +74,7 @@ install_docker() {
 
 create_group() {
     sudo groupadd docker
-    sudo usermod -aG $USER docker
+    sudo usermod -aG docker $USER
 }
 
 create_services() {
